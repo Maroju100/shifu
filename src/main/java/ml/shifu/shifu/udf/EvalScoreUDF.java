@@ -121,9 +121,9 @@ public class EvalScoreUDF extends AbstractTrainerUDF<Tuple> {
 
         String filterExpressions = "";
         if(UDFContext.getUDFContext() != null && UDFContext.getUDFContext().getJobConf() != null) {
-            filterExpressions = UDFContext.getUDFContext().getJobConf().get("shifu.segment.expressions");
+            filterExpressions = UDFContext.getUDFContext().getJobConf().get(Constants.SHIFU_SEGMENT_EXPRESSIONS);
         } else {
-            filterExpressions = Environment.getProperty("shifu.segment.expressions");
+            filterExpressions = Environment.getProperty(Constants.SHIFU_SEGMENT_EXPRESSIONS);
         }
 
         if(StringUtils.isNotBlank(filterExpressions)) {
@@ -185,6 +185,7 @@ public class EvalScoreUDF extends AbstractTrainerUDF<Tuple> {
         }
     }
 
+    @SuppressWarnings("deprecation")
     public Tuple exec(Tuple input) throws IOException {
         if(this.modelRunner == null) {
             // here to initialize modelRunner, this is moved from constructor to here to avoid OOM in client side.
@@ -467,6 +468,8 @@ public class EvalScoreUDF extends AbstractTrainerUDF<Tuple> {
             if(modelConfig.isRegression()) {
                 if(this.modelCnt > 0) {
                     addModelSchema(tupleSchema, this.modelCnt, "");
+                } else {
+                    throw new IllegalStateException("No any model found!");
                 }
 
                 if(this.outputHiddenLayerIndex != 0) {
@@ -493,6 +496,8 @@ public class EvalScoreUDF extends AbstractTrainerUDF<Tuple> {
             } else {
                 if(this.modelCnt > 0) {
                     addModelTagSchema(tupleSchema, modelCnt, "");
+                } else {
+                    throw new IllegalStateException("No any model found!");
                 }
 
                 if(MapUtils.isNotEmpty(this.subModelsCnt)) {

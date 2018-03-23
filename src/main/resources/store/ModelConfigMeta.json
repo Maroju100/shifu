@@ -295,6 +295,11 @@
                 "directive": "checkbox",
                 "defval": false
             }, {
+                "name": "autoFilterEnable",
+                "type": "boolean",
+                "directive": "checkbox",
+                "defval" : true
+            }, {
                 "name": "missingRateThreshold",
                 "type": "number",
                 "directive": "input",
@@ -889,13 +894,19 @@
                 "type": "boolean",
                 "directive": "input",
                 "defval": true
-             }, {
+            }, { 
+                "name": "normAllColumns",
+                "type": "boolean",
+                "directive": "input",
+                "defval": false
+            }, {
                 "name" : "gbtScoreConvertStrategy",
                 "type" : "text",
                 "directive": "select",
                 "defval" : "SIGMOID",
                 "options": [
                     {"label": "RAW", "value":"RAW"},
+                    {"label": "OLD_SIGMOID", "value":"OLD_SIGMOID"},
                     {"label": "SIGMOID", "value":"SIGMOID"},
                     {"label": "CUTOFF", "value":"CUTOFF"},
                     {"label": "HALF_CUTOFF", "value":"HALF_CUTOFF"},

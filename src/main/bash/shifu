@@ -55,9 +55,9 @@ function find_hadoop_root() {
     else
         # Check whether ${HADOOP_CMD_PATH}/../../lib exists or not
         if [ "${HADOOP_CMD_PATH}" != "" ]; then
-            if [ -L ${HADOOP_CMD_PATH} ]; then
+            while [ -L ${HADOOP_CMD_PATH} ]; do
                 HADOOP_CMD_PATH=`readlink ${HADOOP_CMD_PATH}`
-            fi
+            done
             if [ -d "`dirname ${HADOOP_CMD_PATH}`/../lib" ]; then
                 HADOOP_ROOT=`dirname ${HADOOP_CMD_PATH}`/..
             fi
@@ -86,9 +86,9 @@ function find_ld_library_path() {
         fi
 
         if [ -d ${_hadoop_root}/lib/native/Linux-${LINUX_ARCH} ] ; then
-            _ld_library_path="${_hadoop_root}/lib/native/Linux-${LINUX_ARCH}":${LD_LIBRARY_PATH}
+            _ld_library_path="${_hadoop_root}/lib/native/Linux-${LINUX_ARCH}:${_hadoop_root}/lib/native"
         elif [ -d ${_hadoop_root}/lib/native ]; then
-            _ld_library_path="${_hadoop_root}/lib/native":${LD_LIBRARY_PATH}
+            _ld_library_path="${_hadoop_root}/lib/native"
         fi
     fi
 
@@ -108,19 +108,21 @@ fi
 
 SHIFU_OPTS=${JAVA_OPTS:=${SHIFU_OPTS}}
 
-#check SPARK_HOME for shifu spark eval
-if [ "${SPARK_HOME}" != "" ]; then
-   if [ "${SPARK_CONF_DIR}" != "" ]; then
-        SPARK_SUBMIT=`command -v "spark-submit"`
-        if [ "${SPAK_SUBMIT}" == "" ]; then
-            SPARK_SUBMIT="${SPARK_HOME}/bin/spark-submit"
-            SPARK_EVAL_JAR=`find ${SHIFU_HOME}/lib -name "shifu-spark-eval*.jar"`
-            SPARK_CLASSPATH=`find ${SHIFU_HOME}/lib -name "*.jar" | grep -v javadoc | xargs | sed 's/ /,/g'`
-        fi
-   else 
-        echo "SPARK_HOME is not set, please set SPARK_HOME to enable shifu spark eval."
-
-   fi
+#check SPARK_HOME for shifu spark eval, only when SHIFU_SPARK_EVAL is enabled
+if [ "${SHIFU_SPARK_EVAL}" == "TRUE" ]; then
+    if [ "${SPARK_HOME}" != "" ]; then
+       if [ "${SPARK_CONF_DIR}" != "" ]; then
+            SPARK_SUBMIT=`command -v "spark-submit"`
+            if [ "${SPAK_SUBMIT}" == "" ]; then
+                SPARK_SUBMIT="${SPARK_HOME}/bin/spark-submit"
+                SPARK_EVAL_JAR=`find ${SHIFU_HOME}/lib -name "shifu-spark-eval*.jar"`
+                SPARK_CLASSPATH=`find ${SHIFU_HOME}/lib -name "*.jar" | grep -v javadoc | xargs | sed 's/ /,/g'`
+            fi
+       else 
+            echo "SPARK_HOME is not set, please set SPARK_HOME to enable shifu spark eval."
+    
+       fi
+    fi
 fi
 
 cygwin=false
@@ -142,7 +144,7 @@ CLASSPATH=`find ${SHIFU_HOME}/lib -name "*.jar" | grep -v javadoc | xargs | sed 
 
 # ---------------- HADOOP Environment Detection -----------------------------
 if [ "${HADOOP_ROOT}" == "" ]; then
-    if [ "${HADOOP_HOME}" == "" ]; then
+    if [ "${HADOOP_HOME}" != "" ]; then # if HADOOP_HOME is set, use it as HADOOP_ROOT
         HADOOP_ROOT="${HADOOP_HOME}"
     else
         HADOOP_ROOT=`find_hadoop_root`

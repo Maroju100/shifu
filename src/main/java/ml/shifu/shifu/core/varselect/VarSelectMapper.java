@@ -153,8 +153,8 @@ public class VarSelectMapper extends Mapper<LongWritable, Text, LongWritable, Co
      */
     private synchronized static void loadConfigFiles(final Context context) {
         if(modelConfig == null) {
-            LOG.info("Before loading config with memory {} in thread {}.", MemoryUtils.getRuntimeMemoryStats(), Thread
-                    .currentThread().getName());
+            LOG.info("Before loading config with memory {} in thread {}.", MemoryUtils.getRuntimeMemoryStats(),
+                    Thread.currentThread().getName());
             long start = System.currentTimeMillis();
             try {
                 modelConfig = CommonUtils.loadModelConfig(Constants.MODEL_CONFIG_JSON_FILE_NAME, SourceType.LOCAL);
@@ -164,8 +164,8 @@ public class VarSelectMapper extends Mapper<LongWritable, Text, LongWritable, Co
                 throw new RuntimeException(e);
             }
             LOG.info("After loading config with time {}ms and memory {} in thread {}.",
-                    (System.currentTimeMillis() - start), MemoryUtils.getRuntimeMemoryStats(), Thread.currentThread()
-                            .getName());
+                    (System.currentTimeMillis() - start), MemoryUtils.getRuntimeMemoryStats(),
+                    Thread.currentThread().getName());
         }
     }
 
@@ -173,17 +173,17 @@ public class VarSelectMapper extends Mapper<LongWritable, Text, LongWritable, Co
      * Load first model in model path as a {@link MLRegression} instance.
      */
     private synchronized void loadModel() throws IOException {
-        LOG.debug("Before loading model with memory {} in thread {}.", MemoryUtils.getRuntimeMemoryStats(), Thread
-                .currentThread().getName());
+        LOG.debug("Before loading model with memory {} in thread {}.", MemoryUtils.getRuntimeMemoryStats(),
+                Thread.currentThread().getName());
         long start = System.currentTimeMillis();
         PersistorRegistry.getInstance().add(new PersistBasicFloatNetwork());
         FileSystem fs = ShifuFileUtils.getFileSystemBySourceType(SourceType.LOCAL);
         // load model from local d-cache model file
-        model = (MLRegression) CommonUtils.loadModel(modelConfig, new Path("model0."
-                + modelConfig.getAlgorithm().toLowerCase()), fs);
+        model = (MLRegression) CommonUtils.loadModel(modelConfig,
+                new Path("model0." + modelConfig.getAlgorithm().toLowerCase()), fs);
         LOG.debug("After load model class {} with time {}ms and memory {} in thread {}.", model.getClass().getName(),
-                (System.currentTimeMillis() - start), MemoryUtils.getRuntimeMemoryStats(), Thread.currentThread()
-                        .getName());
+                (System.currentTimeMillis() - start), MemoryUtils.getRuntimeMemoryStats(),
+                Thread.currentThread().getName());
     }
 
     /**
@@ -234,8 +234,8 @@ public class VarSelectMapper extends Mapper<LongWritable, Text, LongWritable, Co
         // Copy mode to here
         cacheNetwork = copy((BasicFloatNetwork) model);
 
-        this.filterBy = context.getConfiguration()
-                .get(Constants.SHIFU_VARSELECT_FILTEROUT_TYPE, Constants.FILTER_BY_SE);
+        this.filterBy = context.getConfiguration().get(Constants.SHIFU_VARSELECT_FILTEROUT_TYPE,
+                Constants.FILTER_BY_SE);
         int[] inputOutputIndex = DTrainUtils.getInputOutputCandidateCounts(modelConfig.getNormalizeType(),
                 columnConfigList);
         this.inputNodeCount = inputOutputIndex[0] == 0 ? inputOutputIndex[2] : inputOutputIndex[0];

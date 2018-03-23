@@ -18,12 +18,14 @@ package ml.shifu.shifu.fs;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
@@ -35,6 +37,7 @@ import ml.shifu.shifu.container.obj.RawSourceData.SourceType;
 import ml.shifu.shifu.util.CommonUtils;
 import ml.shifu.shifu.util.Constants;
 import ml.shifu.shifu.util.HDFSUtils;
+import ml.shifu.shifu.util.HdfsPartFile;
 
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
 import org.apache.commons.io.IOUtils;
@@ -359,6 +362,33 @@ public class ShifuFileUtils {
     }
 
     /**
+     * Move src file to dst file in the same FileSystem.
+     * 
+     * @param srcPath
+     *            - source file to copy
+     * @param destPath
+     *            - destination file
+     * @param sourceType
+     *            - local/hdfs
+     * @throws IOException
+     *             - if any I/O exception in processing
+     */
+    public static void moveTo(String srcPath, String destPath, SourceType sourceType) throws IOException {
+        if(StringUtils.isEmpty(srcPath) || StringUtils.isEmpty(destPath) || sourceType == null) {
+            throw new IllegalArgumentException(String.format(
+                    "Null or empty parameters srcDataPath:%s, dstDataPath:%s, sourceType:%s", srcPath, destPath,
+                    sourceType));
+        }
+
+        FileSystem fs = getFileSystemBySourceType(sourceType);
+        if(!fs.exists(new Path(destPath))) {
+            throw new RuntimeException(destPath + " does not exist.");
+        }
+
+        FileUtil.copy(fs, new Path(srcPath), fs, new Path(destPath), false, new Configuration());
+    }
+
+    /**
      * Check the path is directory or not, the SourceType is used to find the file system
      * 
      * @param sourceFile
@@ -590,6 +620,11 @@ public class ShifuFileUtils {
     }
 
     public static FileStatus[] getFilePartStatus(String filePath, SourceType sourceType) throws IOException {
+        return getFilePartStatus(filePath, sourceType, Constants.HADOOP_PART_PREFIX);
+    }
+
+    public static FileStatus[] getFilePartStatus(String filePath, SourceType sourceType, final String partFilePrefix)
+            throws IOException {
         FileSystem fs = getFileSystemBySourceType(sourceType);
 
         PathFilter filter = new PathFilter() {
@@ -597,7 +632,7 @@ public class ShifuFileUtils {
             public boolean accept(Path path) {
                 // FIXME, should only skip _SUCCESS, .pig_header such files, not start from part, some files may not
                 // start from part.
-                return path.getName().startsWith("part");
+                return path.getName().startsWith(partFilePrefix);
             }
         };
 
@@ -644,4 +679,40 @@ public class ShifuFileUtils {
         return size;
     }
 
+    public static void writeLines(@SuppressWarnings("rawtypes") Collection collection, String filePath,
+            SourceType sourceType) throws IOException {
+        BufferedWriter writer = getWriter(filePath, sourceType);
+        try {
+            for(Object object: collection) {
+                if(object != null) {
+                    writer.write(object.toString());
+                    writer.newLine();
+                }
+            }
+        } finally {
+            IOUtils.closeQuietly(writer);
+        }
+    }
+
+    public static void copyToLocal(String hdfsFilePath, String localOutputPath) throws IOException {
+        copyToLocal(hdfsFilePath, Constants.HADOOP_PART_PREFIX, localOutputPath);
+    }
+
+    public static void copyToLocal(String hdfsFilePath, String partFilePrefix, String localOutputPath)
+            throws IOException {
+        HdfsPartFile hdfsPartFile = new HdfsPartFile(hdfsFilePath, SourceType.HDFS, partFilePrefix);
+        BufferedWriter writer = new BufferedWriter(new FileWriter(localOutputPath));
+        String line = null;
+        try {
+            while((line = hdfsPartFile.readLine()) != null) {
+                writer.write(line);
+                writer.newLine();
+            }
+        } catch (Exception e) {
+            // ignore
+        } finally {
+            IOUtils.closeQuietly(writer);
+            hdfsPartFile.close();
+        }
+    }
 }

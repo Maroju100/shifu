@@ -23,17 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import ml.shifu.shifu.column.NSColumn;
-import ml.shifu.shifu.container.WeightAmplifier;
-import ml.shifu.shifu.container.obj.ColumnConfig;
-import ml.shifu.shifu.container.obj.ModelNormalizeConf.NormType;
-import ml.shifu.shifu.core.DataPurifier;
-import ml.shifu.shifu.core.DataSampler;
-import ml.shifu.shifu.core.Normalizer;
-import ml.shifu.shifu.util.CommonUtils;
-import ml.shifu.shifu.util.Constants;
-import ml.shifu.shifu.util.Environment;
-
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.jexl2.Expression;
 import org.apache.commons.jexl2.JexlContext;
@@ -47,14 +36,23 @@ import org.apache.pig.impl.util.UDFContext;
 import org.apache.pig.impl.util.Utils;
 import org.apache.pig.tools.pigstats.PigStatusReporter;
 
+import ml.shifu.shifu.column.NSColumn;
+import ml.shifu.shifu.container.WeightAmplifier;
+import ml.shifu.shifu.container.obj.ColumnConfig;
+import ml.shifu.shifu.container.obj.ModelNormalizeConf.NormType;
+import ml.shifu.shifu.core.DataPurifier;
+import ml.shifu.shifu.core.DataSampler;
+import ml.shifu.shifu.core.Normalizer;
+import ml.shifu.shifu.util.CommonUtils;
+import ml.shifu.shifu.util.Constants;
+import ml.shifu.shifu.util.Environment;
+
 /**
  * NormalizeUDF class normalize the training data for parquet format.
  */
 public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
 
     private static final String POSRATE = "posrate";
-
-    private static final String SHIFU_NORM_CATEGORY_MISSING_NORM = "shifu.norm.category.missing.norm";
 
     private List<Set<String>> tags;
 
@@ -67,6 +65,7 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
     private List<DataPurifier> dataPurifiers;
 
     private boolean isForExpressions = false;
+    private boolean isCompactNorm = false;
 
     public static enum CategoryMissingNormType {
         MEAN, POSRATE;
@@ -106,11 +105,11 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
 
     private void setCategoryMissingNormType() {
         if(UDFContext.getUDFContext() != null && UDFContext.getUDFContext().getJobConf() != null) {
-            this.categoryMissingNormType = CategoryMissingNormType.of(UDFContext.getUDFContext().getJobConf()
-                    .get(SHIFU_NORM_CATEGORY_MISSING_NORM, POSRATE));
+            this.categoryMissingNormType = CategoryMissingNormType.of(
+                    UDFContext.getUDFContext().getJobConf().get(Constants.SHIFU_NORM_CATEGORY_MISSING_NORM, POSRATE));
         } else {
-            this.categoryMissingNormType = CategoryMissingNormType.of(Environment.getProperty(
-                    SHIFU_NORM_CATEGORY_MISSING_NORM, POSRATE));
+            this.categoryMissingNormType = CategoryMissingNormType
+                    .of(Environment.getProperty(Constants.SHIFU_NORM_CATEGORY_MISSING_NORM, POSRATE));
         }
         if(this.categoryMissingNormType == null) {
             this.categoryMissingNormType = CategoryMissingNormType.POSRATE;
@@ -156,9 +155,9 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
         String filterExpressions = "";
 
         if(UDFContext.getUDFContext() != null && UDFContext.getUDFContext().getJobConf() != null) {
-            filterExpressions = UDFContext.getUDFContext().getJobConf().get("shifu.segment.expressions");
+            filterExpressions = UDFContext.getUDFContext().getJobConf().get(Constants.SHIFU_SEGMENT_EXPRESSIONS);
         } else {
-            filterExpressions = Environment.getProperty("shifu.segment.expressions");
+            filterExpressions = Environment.getProperty(Constants.SHIFU_SEGMENT_EXPRESSIONS);
         }
 
         if(StringUtils.isNotBlank(filterExpressions)) {
@@ -166,10 +165,17 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
             String[] splits = CommonUtils.split(filterExpressions, Constants.SHIFU_STATS_FILTER_EXPRESSIONS_DELIMETER);
             this.dataPurifiers = new ArrayList<DataPurifier>(splits.length);
             for(String split: splits) {
-                this.dataPurifiers.add(new DataPurifier(modelConfig, split, true));
+                this.dataPurifiers.add(new DataPurifier(modelConfig, split, false));
             }
         }
 
+        if(UDFContext.getUDFContext() != null && UDFContext.getUDFContext().getJobConf() != null) {
+            this.isCompactNorm = Boolean.TRUE.toString().equalsIgnoreCase(UDFContext.getUDFContext().getJobConf()
+                    .get(Constants.SHIFU_NORM_ONLY_SELECTED, Boolean.FALSE.toString()));
+        } else {
+            this.isCompactNorm = Boolean.TRUE.toString().equalsIgnoreCase(
+                    Environment.getProperty(Constants.SHIFU_NORM_ONLY_SELECTED, Boolean.FALSE.toString()));
+        }
     }
 
     @SuppressWarnings("deprecation")
@@ -246,6 +252,8 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
                         }
                         if(index == -1) {
                             log.error("Invalid data! The target value is not listed - " + rawTag);
+                            warn("Invalid data! The target value is not listed - " + rawTag,
+                                    WarnInNormalizeUDF.INVALID_TAG);
                             return null;
                         }
                         tuple.append(index);
@@ -271,7 +279,8 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
                     }
                 } else {
                     // append normalize data. exclude data clean, for data cleaning, no need check good or bad candidate
-                    if(CommonUtils.isGoodCandidate(config, super.hasCandidates, modelConfig.isRegression())) {
+                    if((this.isCompactNorm && config.isFinalSelect()) || (!this.isCompactNorm
+                            && CommonUtils.isGoodCandidate(config, super.hasCandidates, modelConfig.isRegression()))) {
                         // for multiple classification, binPosRate means rate of such category over all counts, reuse
                         // binPosRate for normalize
                         List<Double> normVals = Normalizer.normalize(config, val, cutoff, normType,
@@ -285,24 +294,50 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
                 }
             }
         } else {
+            // for segment expansion variables
             int rawSize = input.size();
             for(int i = 0; i < this.columnConfigList.size(); i++) {
                 ColumnConfig config = this.columnConfigList.get(i);
                 int newIndex = i >= rawSize ? i % rawSize : i;
                 String val = (input.get(newIndex) == null) ? "" : input.get(newIndex).toString().trim();
+
+                // for target column
                 if(config.isTarget()) {
-                    int type = 0;
-                    if(super.posTagSet.contains(rawTag)) {
-                        type = 1;
-                    } else if(super.negTagSet.contains(rawTag)) {
-                        type = 0;
+                    if(modelConfig.isRegression()) {
+                        int type = 0;
+                        if(super.posTagSet.contains(rawTag)) {
+                            type = 1;
+                        } else if(super.negTagSet.contains(rawTag)) {
+                            type = 0;
+                        } else {
+                            log.error("Invalid data! The target value is not listed - " + rawTag);
+                            warn("Invalid data! The target value is not listed - " + rawTag,
+                                    WarnInNormalizeUDF.INVALID_TAG);
+                            return null;
+                        }
+                        tuple.append(type);
                     } else {
-                        log.error("Invalid data! The target value is not listed - " + rawTag);
-                        warn("Invalid data! The target value is not listed - " + rawTag, WarnInNormalizeUDF.INVALID_TAG);
-                        return null;
+                        int index = -1;
+                        for(int j = 0; j < tags.size(); j++) {
+                            Set<String> tagSet = tags.get(j);
+                            if(tagSet.contains(rawTag)) {
+                                index = j;
+                                break;
+                            }
+                        }
+                        if(index == -1) {
+                            log.error("Invalid data! The target value is not listed - " + rawTag);
+                            warn("Invalid data! The target value is not listed - " + rawTag,
+                                    WarnInNormalizeUDF.INVALID_TAG);
+                            return null;
+                        }
+                        tuple.append(index);
                     }
-                    tuple.append(type);
-                } else if(CommonUtils.isGoodCandidate(config, super.hasCandidates, modelConfig.isRegression())) {
+                    continue;
+                }
+
+                // for others
+                if(CommonUtils.isGoodCandidate(config, super.hasCandidates, modelConfig.isRegression())) {
                     List<Double> normVals = Normalizer.normalize(config, val, cutoff, normType,
                             this.categoryMissingNormType);
                     for(Double normVal: normVals) {
@@ -360,26 +395,26 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
             schemaStr.append("Normalized:Tuple(");
             for(ColumnConfig config: columnConfigList) {
                 if(config.isMeta()) {
-                    schemaStr.append(config.getColumnName() + ":chararray" + ",");
+                    schemaStr.append(normColumnName(config.getColumnName()) + ":chararray" + ",");
                 } else if(!config.isMeta() && config.isNumerical()) {
-                    schemaStr.append(config.getColumnName() + ":float" + ",");
+                    schemaStr.append(normColumnName(config.getColumnName()) + ":float" + ",");
                 } else if(config.isTarget()) {
-                    schemaStr.append(config.getColumnName() + ":int" + ",");
+                    schemaStr.append(normColumnName(config.getColumnName()) + ":int" + ",");
                 } else {
                     if(config.isCategorical() && this.isForClean) {
                         // clean data for DT algorithms, only store index, short is ok while Pig only have int type
-                        schemaStr.append(config.getColumnName() + ":chararray" + ",");
+                        schemaStr.append(normColumnName(config.getColumnName()) + ":chararray" + ",");
                     } else {
                         // for others, set to float, no matter LR/NN categorical or filter out feature with null
                         if(modelConfig.getNormalizeType().equals(NormType.ZSCALE_ONEHOT)) {
                             if(CommonUtils.isGoodCandidate(config, super.hasCandidates)) {
                                 for(int i = 0; i < config.getBinCategory().size(); i++) {
-                                    schemaStr.append(config.getColumnName() + "_" + i + ":float" + ",");
+                                    schemaStr.append(normColumnName(config.getColumnName()) + "_" + i + ":float" + ",");
                                 }
                             }
-                            schemaStr.append(config.getColumnName() + "_missing" + ":float" + ",");
+                            schemaStr.append(normColumnName(config.getColumnName()) + "_missing" + ":float" + ",");
                         } else {
-                            schemaStr.append(config.getColumnName() + ":float" + ",");
+                            schemaStr.append(normColumnName(config.getColumnName()) + ":float" + ",");
                         }
                     }
                 }
@@ -390,6 +425,24 @@ public class NormalizeUDF extends AbstractTrainerUDF<Tuple> {
             log.error("error in outputSchema", e);
             return null;
         }
+    }
+
+    /**
+     * Some column name has illegal chars which are all be normed in shifu. Such as ' ', '/' ..., are changed to '_'.
+     * 
+     * @param columnName
+     *            the column name to be normed
+     * @return normed column name
+     */
+    public static String normColumnName(String columnName) {
+        if(StringUtils.isBlank(columnName)) {
+            return columnName;
+        }
+        // replace empty and / to _ to avoid pig column schema parsing issue, all columns with empty
+        // char or / in its name in shifu will be replaced;
+        String newColumnName = columnName.replaceAll(" ", "_");
+        newColumnName = newColumnName.replaceAll("/", "_");
+        return newColumnName;
     }
 
     /*
