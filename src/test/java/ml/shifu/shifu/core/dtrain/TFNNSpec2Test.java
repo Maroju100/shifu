@@ -25,15 +25,15 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.junit.Test;
+
 import ml.shifu.guagua.util.FileUtils;
 import ml.shifu.shifu.core.dtrain.nn.TFNNModel;
 import ml.shifu.shifu.core.processor.ExportModelProcessor;
 import ml.shifu.shifu.util.CommonUtils;
-
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.testng.annotations.Test;
 
 /**
  * @author pengzhang
@@ -48,18 +48,19 @@ public class TFNNSpec2Test {
         File hadoopWinUtilFile = getAbsoluteFolder(classLoader, "hadoop-2.6.5");
         System.setProperty("hadoop.home.dir", hadoopWinUtilFile.toString());
 
-        File modelFile = getModelFile(classLoader, "tfmodel/spec2/saved_model.pb");
+        File modelFile = getModelFile(classLoader, "tfmodel/f1484-5/saved_model.pb");
 
         TFNNModel tfNNModel = ExportModelProcessor.createFromTfToEncog(modelFile.getParent().toString(),
-                "dense_2/Sigmoid", "serve");
+                "dense_6/Sigmoid", "serve");
         Configuration conf = new Configuration();
 
-        Path output = new Path(".", "modelspec2.tfnn");
+        Path output = new Path(".", "modelspec1484-5.tfnn");
         TFNNModel.save(tfNNModel.getColumnIndexNameMap(), tfNNModel.getColumnTypeMap(),
                 tfNNModel.getOneHotCategoryMap(), tfNNModel.getBasicNetwork(), FileSystem.getLocal(conf), output);
     }
 
-    private File getModelFile(ClassLoader classLoader, String modelFile) throws NoSuchFileException, URISyntaxException {
+    private File getModelFile(ClassLoader classLoader, String modelFile)
+            throws NoSuchFileException, URISyntaxException {
         String protoPath = modelFile;
         URL protoResource = classLoader.getResource(protoPath);
         if(protoResource == null) {
@@ -70,8 +71,8 @@ public class TFNNSpec2Test {
         return protoFile;
     }
 
-    private File getAbsoluteFolder(ClassLoader classLoader, String currFolder) throws NoSuchFileException,
-            URISyntaxException {
+    private File getAbsoluteFolder(ClassLoader classLoader, String currFolder)
+            throws NoSuchFileException, URISyntaxException {
         String protoPath = currFolder;
         URL protoResource = classLoader.getResource(protoPath);
         if(protoResource == null) {
@@ -83,7 +84,7 @@ public class TFNNSpec2Test {
 
     @Test
     public void testModelScore() throws IOException {
-        String modelPath = "src/test/resources/tfmodel/modelspec2.tfnn";
+        String modelPath = "src/test/resources/tfmodel/modelspec1484-5.tfnn";
         FileInputStream fi = null;
         TFNNModel tfNNModel;
         try {
@@ -93,7 +94,14 @@ public class TFNNSpec2Test {
         } finally {
             fi.close();
         }
-        List<String> lines = FileUtils.readLines(new File("src/test/resources/tfmodel/spec2.csv"));
+
+        double[] weights = tfNNModel.getBasicNetwork().getFlat().getWeights();
+        for(int i = 0; i < weights.length; i++) {
+            if(Double.isNaN(weights[i])) {
+                System.out.println(i + " " + weights[i]);
+            }
+        }
+        List<String> lines = FileUtils.readLines(new File("src/test/resources/tfmodel/n1484.txt"));
 
         if(lines.size() <= 1) {
             return;
@@ -110,7 +118,11 @@ public class TFNNSpec2Test {
             int size = tfNNModel.getBasicNetwork().getInputCount();
             double[] inputs = new double[size];
             for(int j = 2; j < data.length; j++) {
-                inputs[j - 2] = Double.parseDouble(data[j]);
+                if(data[j] == null || data[j].length() == 0) {
+                    inputs[j - 2] = 0d;
+                } else {
+                    inputs[j - 2] = Double.parseDouble(data[j]);
+                }
             }
 
             double[] scores = tfNNModel.compute(inputs);
